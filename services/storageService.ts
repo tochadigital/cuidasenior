@@ -54,7 +54,7 @@ export const loadLocalState = (): AppState | null => {
     const serialized = localStorage.getItem(STORAGE_KEY);
     if (serialized) {
       const parsed = JSON.parse(serialized);
-      // Garantir que carregamos o currentUser se existir
+      // Mesclagem profunda simples para garantir que novas propriedades do defaultState existam
       return { ...defaultState, ...parsed };
     }
   } catch (e) {
@@ -95,16 +95,19 @@ export const loadState = (): AppState => {
 };
 
 export const saveState = async (state: AppState) => {
+  // 1. Salva localmente primeiro (sempre imediato)
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch (e) {
     console.error("Falha ao salvar localmente", e);
   }
 
+  // 2. Tenta salvar na nuvem
   const syncId = getSyncId();
   if (syncId) {
     try {
-      await fetch(`${SUPABASE_URL}/rest/v1/care_sync`, {
+      // Usando POST com on-conflict para Upsert garantido no PostgREST/Supabase
+      const response = await fetch(`${SUPABASE_URL}/rest/v1/care_sync`, {
         method: 'POST',
         headers: { 
           'apikey': SUPABASE_KEY,
@@ -118,8 +121,13 @@ export const saveState = async (state: AppState) => {
           updated_at: new Date().toISOString()
         })
       });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.warn("Erro na resposta do Supabase:", errorText);
+      }
     } catch (e) {
-      console.warn("Offline: Sincronização em nuvem pendente.");
+      console.warn("Offline ou erro de rede: Sincronização em nuvem pendente.");
     }
   }
 };

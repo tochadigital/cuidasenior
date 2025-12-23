@@ -1,5 +1,4 @@
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { loadState, loadRemoteState, saveState, getSyncId, setSyncId } from './services/storageService';
 import { AppState, Medication, Caregiver } from './types';
 import { Dashboard } from './components/Dashboard';
@@ -30,6 +29,8 @@ const App: React.FC = () => {
   const [view, setView] = useState<string>('dashboard');
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'syncing'>('idle');
   const [alertMed, setAlertMed] = useState<Medication | null>(null);
+  // Fix: Changed NodeJS.Timeout to ReturnType<typeof setTimeout> to fix "Cannot find namespace 'NodeJS'" error in browser
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   const [globalAlert, setGlobalAlert] = useState<{ open: boolean, title: string, msg: string }>({ open: false, title: '', msg: '' });
 
@@ -50,8 +51,12 @@ const App: React.FC = () => {
             setSaveStatus('syncing');
             const remoteData = await loadRemoteState();
             if (remoteData) {
-                setState(prev => ({ ...remoteData, isAuthenticated: true }));
-                saveState(remoteData);
+                // Ao carregar da nuvem, mesclamos com o estado local atual
+                setState(prev => {
+                  const merged = { ...remoteData, isAuthenticated: true, currentUser: prev?.currentUser || remoteData.currentUser };
+                  saveState(merged); // Atualiza localmente
+                  return merged;
+                });
                 setSaveStatus('saved');
             } else {
                 setSaveStatus('idle');
@@ -64,6 +69,22 @@ const App: React.FC = () => {
       Notification.requestPermission();
     }
   }, []);
+
+  // Debounced Save to Cloud
+  const triggerSave = (newState: AppState) => {
+    // 1. Salva localmente de forma síncrona/imediata
+    localStorage.setItem('cuida_senior_db_v1', JSON.stringify(newState));
+
+    // 2. Debounce para o Supabase (nuvem)
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    
+    setSaveStatus('saving');
+    saveTimeoutRef.current = setTimeout(async () => {
+      await saveState(newState);
+      setSaveStatus('saved');
+      setTimeout(() => setSaveStatus('idle'), 3000);
+    }, 1500); // Aguarda 1.5s de inatividade nos inputs antes de enviar para o servidor
+  };
 
   useEffect(() => {
     if (!state || !state.isAuthenticated) return;
@@ -121,7 +142,7 @@ const App: React.FC = () => {
       if (stateChanged) {
           const newState = { ...state, medications: updatedMeds, appointments: updatedAppts };
           setState(newState);
-          saveState(newState);
+          triggerSave(newState);
       }
 
     }, 10000);
@@ -130,12 +151,9 @@ const App: React.FC = () => {
 
   const updateState = (updates: Partial<AppState>) => {
     if (!state) return;
-    setSaveStatus('saving');
     const newState = { ...state, ...updates };
     setState(newState);
-    saveState(newState).then(() => {});
-    setTimeout(() => setSaveStatus('saved'), 500);
-    setTimeout(() => setSaveStatus('idle'), 2500);
+    triggerSave(newState);
   };
 
   const handleLogin = (user: Caregiver, elderData?: { name: string, cpf: string }) => {
@@ -147,18 +165,19 @@ const App: React.FC = () => {
       newProfile.cpf = elderData.cpf;
       
       const cleanCPF = elderData.cpf.replace(/\D/g, '');
-      const existingSyncId = getSyncId();
-      if (!existingSyncId || !existingSyncId.includes(cleanCPF)) {
-        const autoKey = `CUIDA-${cleanCPF}`;
-        setSyncId(autoKey);
-      }
+      const autoKey = `CUIDA-${cleanCPF}`;
+      setSyncId(autoKey);
     }
 
-    updateState({ 
+    const newState = { 
+      ...state,
       currentUser: user, 
       isAuthenticated: true,
       profile: newProfile 
-    });
+    };
+    
+    setState(newState);
+    triggerSave(newState);
     
     showAlert('Bem-vindo!', `Olá ${user.name}, vamos cuidar do ${elderData ? elderData.name.split(' ')[0] : 'idoso'} hoje?`);
   };
@@ -205,7 +224,7 @@ const App: React.FC = () => {
       <div className={`absolute top-4 left-1/2 transform -translate-x-1/2 z-[60] transition-all duration-300 ${saveStatus === 'idle' ? '-translate-y-20 opacity-0' : 'translate-y-0 opacity-100'}`}>
         <div className="bg-gray-800/90 backdrop-blur-md text-white text-[10px] font-bold px-4 py-2 rounded-full shadow-lg flex items-center gap-2">
           <i className={`fas ${saveStatus === 'saving' || saveStatus === 'syncing' ? 'fa-circle-notch fa-spin' : 'fa-cloud-upload-alt'} text-teal-400`}></i>
-          {saveStatus === 'saving' ? 'SALVANDO...' : saveStatus === 'syncing' ? 'SINCRONIZANDO...' : 'SALVO'}
+          {saveStatus === 'saving' ? 'AGUARDANDO...' : saveStatus === 'syncing' ? 'SINCRONIZANDO...' : 'SINCRONIZADO'}
         </div>
       </div>
 
