@@ -9,11 +9,14 @@ interface Props {
 type LoginStep = 'initial' | 'selection' | 'manual' | 'elder_setup';
 
 const ACCOUNTS_STORAGE_KEY = 'cuida_senior_device_accounts';
+const LAST_ELDER_KEY = 'cuida_senior_last_elder_data';
 
 export const LoginView: React.FC<Props> = ({ onLogin }) => {
   const [step, setStep] = useState<LoginStep>('initial');
   const [loading, setLoading] = useState(false);
   const [savedAccounts, setSavedAccounts] = useState<Caregiver[]>([]);
+  const [lastElder, setLastElder] = useState<{ name: string, cpf: string } | null>(null);
+  const [showManualElderForm, setShowManualElderForm] = useState(false);
   
   // Dados do Cuidador (Formulário)
   const [currentUser, setCurrentUser] = useState<Caregiver | null>(null);
@@ -24,8 +27,9 @@ export const LoginView: React.FC<Props> = ({ onLogin }) => {
   const [elderName, setElderName] = useState('');
   const [elderCPF, setElderCPF] = useState('');
 
-  // Carregar contas salvas no dispositivo ao iniciar
+  // Carregar dados salvos no dispositivo ao iniciar
   useEffect(() => {
+    // Carregar contas de cuidadores
     const saved = localStorage.getItem(ACCOUNTS_STORAGE_KEY);
     if (saved) {
       try {
@@ -33,6 +37,21 @@ export const LoginView: React.FC<Props> = ({ onLogin }) => {
       } catch (e) {
         console.error("Erro ao carregar contas do dispositivo", e);
       }
+    }
+
+    // Carregar último idoso acessado
+    const savedElder = localStorage.getItem(LAST_ELDER_KEY);
+    if (savedElder) {
+      try {
+        const parsed = JSON.parse(savedElder);
+        setLastElder(parsed);
+        // Se já existe um idoso, começamos escondendo o formulário manual
+        setShowManualElderForm(false);
+      } catch (e) {
+        console.error("Erro ao carregar último idoso", e);
+      }
+    } else {
+      setShowManualElderForm(true);
     }
   }, []);
 
@@ -74,14 +93,19 @@ export const LoginView: React.FC<Props> = ({ onLogin }) => {
     setStep('elder_setup');
   };
 
-  const handleElderSubmit = (e: React.FormEvent) => {
+  const handleElderSubmit = (e: React.FormEvent, directData?: { name: string, cpf: string }) => {
     e.preventDefault();
-    if (!elderName || !elderCPF || !currentUser) return;
+    const targetName = directData ? directData.name : elderName;
+    const targetCPF = directData ? directData.cpf : elderCPF;
+
+    if (!targetName || !targetCPF || !currentUser) return;
     
     setLoading(true);
-    setTimeout(() => {
-      onLogin(currentUser, { name: elderName, cpf: elderCPF });
-    }, 1200);
+    
+    // Salvar como último idoso para o próximo acesso rápido
+    localStorage.setItem(LAST_ELDER_KEY, JSON.stringify({ name: targetName, cpf: targetCPF }));
+    
+    onLogin(currentUser, { name: targetName, cpf: targetCPF });
   };
 
   const formatCPF = (value: string) => {
@@ -225,44 +249,86 @@ export const LoginView: React.FC<Props> = ({ onLogin }) => {
               <div className="w-12 h-12 bg-teal-100 text-teal-600 rounded-full flex items-center justify-center mx-auto mb-2">
                  <i className="fas fa-user-elderly text-xl"></i>
               </div>
-              <h3 className="text-xl font-bold text-gray-800">Dados do Idoso</h3>
-              <p className="text-xs text-gray-400">Identificação para os cuidados</p>
+              <h3 className="text-xl font-bold text-gray-800">Vínculo de Cuidado</h3>
+              <p className="text-xs text-gray-400">Acesse o prontuário do paciente</p>
             </div>
 
-            <form onSubmit={handleElderSubmit} className="space-y-4">
-              <div>
-                <label className="text-[10px] font-bold text-gray-400 uppercase ml-2 mb-1 block">Nome do Idoso</label>
-                <input 
-                  type="text" required placeholder="Ex: João Silva"
-                  className="w-full p-4 bg-gray-50 border border-transparent focus:border-teal-500 focus:bg-white rounded-2xl outline-none transition-all text-sm font-medium"
-                  value={elderName} onChange={e => setElderName(e.target.value)}
-                />
-              </div>
-              <div>
-                <label className="text-[10px] font-bold text-gray-400 uppercase ml-2 mb-1 block">CPF do Idoso</label>
-                <input 
-                  type="text" required placeholder="000.000.000-00"
-                  className="w-full p-4 bg-gray-50 border border-transparent focus:border-teal-500 focus:bg-white rounded-2xl outline-none transition-all text-sm font-medium"
-                  value={elderCPF} onChange={e => setElderCPF(formatCPF(e.target.value))}
-                />
-              </div>
+            {/* QUICK ACCESS OPTION */}
+            {lastElder && !showManualElderForm && (
+              <div className="space-y-4 animate-fade-in">
+                <div className="bg-teal-50 border border-teal-100 p-4 rounded-2xl text-center">
+                  <p className="text-[10px] text-teal-600 font-black uppercase tracking-widest mb-1">Último Acesso Rápido</p>
+                  <h4 className="text-lg font-black text-teal-900">{lastElder.name}</h4>
+                  <p className="text-xs text-teal-700/60 font-medium">CPF: ***.***.{lastElder.cpf.slice(-6)}</p>
+                </div>
+                
+                <button 
+                  onClick={(e) => handleElderSubmit(e, lastElder)}
+                  disabled={loading}
+                  className="w-full bg-teal-600 text-white py-4 rounded-2xl font-bold shadow-lg shadow-teal-100 hover:bg-teal-700 active:scale-[0.98] transition-all flex items-center justify-center gap-3"
+                >
+                   {loading ? <i className="fas fa-circle-notch fa-spin"></i> : <i className="fas fa-play"></i>}
+                   ACESSAR PERFIL
+                </button>
 
-              <button 
-                type="submit" disabled={loading}
-                className="w-full bg-teal-600 text-white py-4 rounded-2xl font-bold shadow-lg shadow-teal-100 hover:bg-teal-700 active:scale-[0.98] transition-all flex items-center justify-center gap-2 mt-4"
-              >
-                {loading ? <i className="fas fa-circle-notch fa-spin"></i> : <i className="fas fa-check-circle"></i>}
-                {loading ? 'Finalizando...' : 'Concluir Cadastro'}
-              </button>
-            </form>
+                <button 
+                  onClick={() => setShowManualElderForm(true)}
+                  className="w-full py-2 text-xs text-gray-400 font-bold hover:text-teal-600 transition-colors"
+                >
+                  Cuidar de outro idoso
+                </button>
+              </div>
+            )}
+
+            {/* MANUAL FORM (New Elder) */}
+            {(showManualElderForm || !lastElder) && (
+              <form onSubmit={(e) => handleElderSubmit(e)} className="space-y-4 animate-fade-in">
+                <div>
+                  <label className="text-[10px] font-bold text-gray-400 uppercase ml-2 mb-1 block">Nome do Idoso</label>
+                  <input 
+                    type="text" required placeholder="Ex: João Silva"
+                    className="w-full p-4 bg-gray-50 border border-transparent focus:border-teal-500 focus:bg-white rounded-2xl outline-none transition-all text-sm font-medium"
+                    value={elderName} onChange={e => setElderName(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-gray-400 uppercase ml-2 mb-1 block">CPF Sincronizador (Chave)</label>
+                  <input 
+                    type="text" required placeholder="000.000.000-00"
+                    className="w-full p-4 bg-gray-50 border border-transparent focus:border-teal-500 focus:bg-white rounded-2xl outline-none transition-all text-sm font-medium"
+                    value={elderCPF} onChange={e => setElderCPF(formatCPF(e.target.value))}
+                  />
+                </div>
+
+                <div className="flex flex-col gap-3 mt-4">
+                  <button 
+                    type="submit" disabled={loading}
+                    className="w-full bg-teal-600 text-white py-4 rounded-2xl font-bold shadow-lg shadow-teal-100 hover:bg-teal-700 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                  >
+                    {loading ? <i className="fas fa-circle-notch fa-spin"></i> : <i className="fas fa-sync-alt"></i>}
+                    {loading ? 'Sincronizando...' : 'Entrar e Sincronizar'}
+                  </button>
+
+                  {lastElder && (
+                    <button 
+                      type="button"
+                      onClick={() => setShowManualElderForm(false)}
+                      className="w-full py-2 text-xs text-gray-400 font-bold hover:text-gray-600"
+                    >
+                      Voltar para Acesso Rápido
+                    </button>
+                  )}
+                </div>
+              </form>
+            )}
           </div>
         )}
       </div>
 
       <div className="text-center animate-fade-in mb-4">
         <p className="text-[10px] text-gray-300 px-6 leading-relaxed">
-          Sua privacidade é nossa prioridade. <br/>
-          As contas são gerenciadas localmente no dispositivo.
+          Dados protegidos e criptografados. <br/>
+          Sincronização baseada no CPF do paciente.
         </p>
       </div>
 

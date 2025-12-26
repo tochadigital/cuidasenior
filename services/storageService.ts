@@ -25,6 +25,7 @@ export const defaultState: AppState = {
     { id: '1', name: 'Maria (Manhã)', phone: '5511999999999' },
     { id: '2', name: 'Ana (Noite)', phone: '5511888888888' }
   ],
+  reliefCaregiver: null,
   medications: [], 
   appointments: [],
   exams: [], 
@@ -54,7 +55,6 @@ export const loadLocalState = (): AppState | null => {
     const serialized = localStorage.getItem(STORAGE_KEY);
     if (serialized) {
       const parsed = JSON.parse(serialized);
-      // Mesclagem profunda simples para garantir que novas propriedades do defaultState existam
       return { ...defaultState, ...parsed };
     }
   } catch (e) {
@@ -63,8 +63,12 @@ export const loadLocalState = (): AppState | null => {
   return null;
 };
 
-export const loadRemoteState = async (): Promise<AppState | null> => {
-  const syncId = getSyncId();
+/**
+ * Carrega o estado da nuvem. 
+ * Se um 'id' for passado, usa ele. Caso contrário, busca no localStorage.
+ */
+export const loadRemoteState = async (id?: string): Promise<AppState | null> => {
+  const syncId = id || getSyncId();
   if (!syncId) return null;
 
   try {
@@ -95,18 +99,15 @@ export const loadState = (): AppState => {
 };
 
 export const saveState = async (state: AppState) => {
-  // 1. Salva localmente primeiro (sempre imediato)
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch (e) {
     console.error("Falha ao salvar localmente", e);
   }
 
-  // 2. Tenta salvar na nuvem
   const syncId = getSyncId();
   if (syncId) {
     try {
-      // Usando POST com on-conflict para Upsert garantido no PostgREST/Supabase
       const response = await fetch(`${SUPABASE_URL}/rest/v1/care_sync`, {
         method: 'POST',
         headers: { 

@@ -50,6 +50,7 @@ export interface Caregiver {
 export interface AppState {
   profile: ElderProfile;
   caregivers: Caregiver[];
+  reliefCaregiver?: Caregiver | null;
   medications: Medication[];
   appointments: Appointment[];
   exams: Exam[]; 

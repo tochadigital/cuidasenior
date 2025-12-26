@@ -1,5 +1,5 @@
 {
-  "name": "Copy of CuidaSenior AI 3.0",
+  "name": "CuidaSenior AI 3.0",
   "description": "Aplicativo completo para gestão de cuidados com idosos, com monitoramento de saúde e controle de despesas via IA.",
   "requestFramePermissions": [
     "camera",
